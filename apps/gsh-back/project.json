@@ -1,0 +1,24 @@
+{
+  "name": "gsh-back",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/gsh-back/src",
+  "projectType": "application",
+  "targets": {
+    "serve": {
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "gsh-back:build"
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "gsh-back:build:development"
+        },
+        "production": {
+          "buildTarget": "gsh-back:build:production"
+        }
+      }
+    }
+  },
+  "tags": []
+}
