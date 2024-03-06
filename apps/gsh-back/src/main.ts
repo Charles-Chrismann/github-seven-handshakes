@@ -83,25 +83,84 @@ function filterUselessDeviation(paths: string[][]) {
   }
 }
 
-let found = 0
+const visited = []
+const paths = []
 
-async function circleSearch(target: string, start: string, logins = [start], circle = 1) {
-  if(circle === 4) return
-  // const followingPromises: Promise<string[]>[] = []
-  const followingPromises: string[][] = []
-  for(const following of logins) {
-    if(following === target) console.log('Found !!!', circle)
-    if(searched.includes(following)) {
-      console.log('ignore', following)
-      continue
+function findShortestUserPath(start: string, target: string, chain: string[]) {
+  const user = users.find(u => u.user === start)
+  if(!user) return
+  visited.push(user.user)
+  if(user.followings.includes(target)) return [...chain, target]
+  for(const following of user.followings) {
+    if(visited.includes(following)) continue
+    const path = findShortestUserPath(following, target, [...chain, following])
+    if(path) {
+      paths.push(path)
+      return
     }
-    searched.push(following)
-    // console.log(searched)
-    followingPromises.push(await getFollowings(following))
-    console.log(`circle ${circle}:`,requestCount, following)
   }
-  const nextLogins = Array.from(new Set((await Promise.all(followingPromises)).flat()))
+}
+
+let found = false
+const users = [] as {user: string, followings: string[]}[]
+const circles: {parent: null | string, followings: string[]}[][] = []
+
+
+
+async function circleSearch(
+  target: string,
+  start: string,
+  logins = [{parent: null, followings: [start]}] as {parent: null | string, followings: string[]}[],
+  circle = 1
+) {
+  if(circle > 5) return
+  // const followingPromises: Promise<string[]>[] = []
+  const followingPromises: {parent: null | string, followings: string[]}[] = []
+  for(const login of logins) {
+    for(const following of login.followings) {
+      const followingObject = { parent: following, followings: [] }
+      followingPromises.push(followingObject)
+      if(following === target) {
+        console.log('Found !!!', circle)
+        found = true
+      }
+      if(searched.includes(following)) {
+        console.log('ignore', following)
+        followingObject.followings = users.find(user => user.user === following).followings
+        continue
+      }
+      searched.push(following)
+      // console.log(searched)
+      const followingPromise = await getFollowings(following)
+      users.push({ user: following, followings: followingPromise })
+      followingObject.followings = followingPromise
+      console.log(`circle ${circle}:`,requestCount, following)
+    }
+  }
+  const resolvedPromises = await Promise.all(followingPromises)
+  console.log(resolvedPromises.filter(x => x.followings.find(y => y === target)))
+  if(resolvedPromises.find(x => x.followings.find(y => y === target))) found = true
+  const nextLogins = Array.from(new Set(resolvedPromises))
+  circles.push(nextLogins)
   // console.log(nextLogins)
+  if(found) {
+    let nextParent = target
+    const chain: string[] = [target]
+    for(let i = circle - 1; i > 0; i--) {
+      console.log(i, circles.length)
+      const concerned = circles[i].find(x => x.followings.find(y => y === nextParent))
+      // if(i === circle - 1) {
+      //   concerned = circles[i].find(x => x.parent === nextParent)
+      // } else concerned = circles[i].find(x => x.followings.find(y => y === nextParent))
+      nextParent = concerned.parent
+      chain.push(nextParent)
+    }
+    chain.push(start)
+    console.log(chain.reverse())
+    return
+  }
+  // const nextLogins = Array.from(new Set(resolvedPromises))
+  // circles.push(nextLogins)
   await circleSearch(target, start, nextLogins, circle + 1)
 }
 
@@ -124,7 +183,9 @@ app.post('/api/handshake', async (req, res) => {
   requestCount = 0
   const {target, start}: {target: string, start: string} = req.body
   await circleSearch(target, start)
-  console.log('fini', searched)
+  console.log(circles)
+  console.log(findShortestUserPath(start, target, [start]))
+  // console.log(users)
   // console.log(filterUselessDeviation(chains))
   res.send({ message: 'Welcome to gsh-back!' });
 });
