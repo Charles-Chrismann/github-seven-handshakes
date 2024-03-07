@@ -11,6 +11,8 @@
     "express": "^4.18.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
+    "socket.io": "^4.7.4",
+    "socket.io-client": "^4.7.4",
     "tslib": "^2.3.0"
   },
   "devDependencies": {

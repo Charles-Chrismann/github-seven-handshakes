@@ -2,6 +2,8 @@ import 'dotenv/config'
 import express from 'express';
 import * as path from 'path';
 import cors from 'cors'
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 
 async function getFollowings(userLogin: string): Promise<string[]> {
   try {
@@ -103,7 +105,7 @@ function findShortestUserPath(start: string, target: string, chain: string[]) {
 
 let found = false
 const users = [] as {user: string, followings: string[]}[]
-const circles: {parent: null | string, followings: string[]}[][] = []
+let circles: {parent: null | string, followings: string[]}[][] = []
 
 
 
@@ -115,7 +117,7 @@ async function circleSearch(
 ) {
   if(circle > 5) return
   // const followingPromises: Promise<string[]>[] = []
-  const followingPromises: {parent: null | string, followings: string[]}[] = []
+  const followingPromises: {parent: string, followings: string[]}[] = []
   for(const login of logins) {
     for(const following of login.followings) {
       const followingObject = { parent: following, followings: [] }
@@ -134,37 +136,47 @@ async function circleSearch(
       const followingPromise = await getFollowings(following)
       users.push({ user: following, followings: followingPromise })
       followingObject.followings = followingPromise
+      io.emit('following', {following: followingObject, circle: circle - 1})
       console.log(`circle ${circle}:`,requestCount, following)
     }
   }
   const resolvedPromises = await Promise.all(followingPromises)
-  console.log(resolvedPromises.filter(x => x.followings.find(y => y === target)))
-  if(resolvedPromises.find(x => x.followings.find(y => y === target))) found = true
-  const nextLogins = Array.from(new Set(resolvedPromises))
+  const nextLogins = resolvedPromises.filter((v,i,a)=>a.findIndex(v2=>(v2.parent===v.parent))===i)
   circles.push(nextLogins)
-  // console.log(nextLogins)
-  if(found) {
-    let nextParent = target
-    const chain: string[] = [target]
-    for(let i = circle - 1; i > 0; i--) {
-      console.log(i, circles.length)
-      const concerned = circles[i].find(x => x.followings.find(y => y === nextParent))
-      // if(i === circle - 1) {
-      //   concerned = circles[i].find(x => x.parent === nextParent)
-      // } else concerned = circles[i].find(x => x.followings.find(y => y === nextParent))
-      nextParent = concerned.parent
-      chain.push(nextParent)
+
+  let concerneds = resolvedPromises.filter(x => x.followings.find(y => y === target))
+  if(concerneds.length) {
+    concerneds = resolvedPromises.filter(x => x.followings.find(y => y === target))
+    
+    const chains: string[][] = []
+    for(const concerned of concerneds) {
+      let nextParent = concerned.parent
+      const chain: string[] = [target]
+      for(let i = circle - 1; i > 0; i--) {
+        // const concerned_ = circles[i].find(x => x.followings.find(y => y === nextParent))
+        let concerned_
+        if(i === circle - 1) {
+          concerned_ = circles[i].find(x => x.parent === nextParent)
+        } else concerned_ = circles[i].find(x => x.followings.find(y => y === nextParent))
+        nextParent = concerned_.parent
+        chain.push(nextParent)
+      }
+      chain.push(start)
+      chains.push(chain.reverse())
     }
-    chain.push(start)
-    console.log(chain.reverse())
+    console.log(chains)
     return
   }
-  // const nextLogins = Array.from(new Set(resolvedPromises))
-  // circles.push(nextLogins)
   await circleSearch(target, start, nextLogins, circle + 1)
 }
 
 const app = express();
+const server = createServer(app)
+const io = new Server(server, {
+  cors: {
+    origin: '*'
+  }
+})
 app.use(cors())
 app.use(express.json())
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
@@ -181,17 +193,22 @@ app.post('/api/handshake', async (req, res) => {
   searched = []
   chains = []
   requestCount = 0
+  circles = []
   const {target, start}: {target: string, start: string} = req.body
   await circleSearch(target, start)
   console.log(circles)
-  console.log(findShortestUserPath(start, target, [start]))
+  // console.log(circles)
   // console.log(users)
   // console.log(filterUselessDeviation(chains))
   res.send({ message: 'Welcome to gsh-back!' });
 });
 
+io.on('connection', (socket) => {
+  console.log('a user connected');
+});
+
 const port = process.env.PORT || 3333;
-const server = app.listen(port, () => {
+server.listen(port, () => {
   console.log(`Listening at http://localhost:${port}/api`);
 });
 server.on('error', console.error);
